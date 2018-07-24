@@ -66,7 +66,7 @@ import (
 type BloomFilter struct {
 	m uint
 	k uint
-	b *bitset.BitSet
+	b bitset.BitSet
 }
 
 func max(x, y uint) uint {
@@ -79,28 +79,22 @@ func max(x, y uint) uint {
 // New creates a new Bloom filter with _m_ bits and _k_ hashing functions
 // We force _m_ and _k_ to be at least one to avoid panics.
 func New(m uint, k uint) *BloomFilter {
-	return &BloomFilter{max(1, m), max(1, k), bitset.New(m)}
+	return &BloomFilter{max(1, m), max(1, k), *bitset.New(m)}
 }
 
 // From creates a new Bloom filter with len(_data_) * 64 bits and _k_ hashing
 // functions. The data slice is not going to be reset.
 func From(data []uint64, k uint) *BloomFilter {
 	m := uint(len(data) * 64)
-	return &BloomFilter{m, k, bitset.From(data)}
+	return &BloomFilter{m, k, *bitset.From(data)}
 }
 
 // baseHashes returns the four hash values of data that are used to create k
 // hashes
-func baseHashes(data []byte) [4]uint64 {
-	a1 := []byte{1} // to grab another bit of data
-	hasher := murmur3.New128()
-	hasher.Write(data) // #nosec
-	v1, v2 := hasher.Sum128()
-	hasher.Write(a1) // #nosec
-	v3, v4 := hasher.Sum128()
-	return [4]uint64{
-		v1, v2, v3, v4,
-	}
+func baseHashes(data []byte) (r [4]uint64) {
+	r[0], r[1] = murmur3.Sum128(data)
+	r[2], r[3] = sipHash(data)
+	return
 }
 
 // location returns the ith hashed location using the four base hash values
@@ -160,7 +154,7 @@ func (f *BloomFilter) Merge(g *BloomFilter) error {
 		return fmt.Errorf("k's don't match: %d != %d", f.m, g.m)
 	}
 
-	f.b.InPlaceUnion(g.b)
+	f.b.InPlaceUnion(&g.b)
 	return nil
 }
 
@@ -267,9 +261,43 @@ type bloomFilterJSON struct {
 	B *bitset.BitSet `json:"b"`
 }
 
+func (f *BloomFilter) BinaryStorageSize() int {
+	return 16+f.b.BinaryStorageSize()
+}
+
+func (f *BloomFilter) MarshalBinary() ([]byte, error) {
+	bb := bytes.NewBuffer(nil)
+	if _, err := f.b.WriteTo(bb); err != nil {
+		return nil, err
+	}
+	/*
+	if err := binary.Write(bb, binary.LittleEndian, f.m); err != nil {
+		return nil, err
+	}
+	if err := binary.Write(bb, binary.LittleEndian, f.k); err != nil {
+		return nil, err
+	}
+	*/
+	return bb.Bytes(), nil
+}
+
+func (f *BloomFilter) UnmarshalBinary(b []byte) error {
+	bb := bytes.NewBuffer(b)
+	if _, err := f.b.ReadFrom(bb); err != nil {
+		return err
+	}
+	/*
+	if err := binary.Read(bb, binary.LittleEndian, &f.m); err != nil {
+		return err
+	}
+	return binary.Read(bb, binary.LittleEndian, &f.k)
+	*/
+	return nil
+}
+
 // MarshalJSON implements json.Marshaler interface.
 func (f *BloomFilter) MarshalJSON() ([]byte, error) {
-	return json.Marshal(bloomFilterJSON{f.m, f.k, f.b})
+	return json.Marshal(bloomFilterJSON{f.m, f.k, &f.b})
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface.
@@ -281,7 +309,7 @@ func (f *BloomFilter) UnmarshalJSON(data []byte) error {
 	}
 	f.m = j.M
 	f.k = j.K
-	f.b = j.B
+	f.b = *j.B
 	return nil
 }
 
@@ -320,7 +348,7 @@ func (f *BloomFilter) ReadFrom(stream io.Reader) (int64, error) {
 	}
 	f.m = uint(m)
 	f.k = uint(k)
-	f.b = b
+	f.b = *b
 	return numBytes + int64(2*binary.Size(uint64(0))), nil
 }
 
@@ -345,7 +373,7 @@ func (f *BloomFilter) GobDecode(data []byte) error {
 
 // Equal tests for the equality of two Bloom filters
 func (f *BloomFilter) Equal(g *BloomFilter) bool {
-	return f.m == g.m && f.k == g.k && f.b.Equal(g.b)
+	return f.m == g.m && f.k == g.k && f.b.Equal(&g.b)
 }
 
 // Locations returns a list of hash locations representing a data item.

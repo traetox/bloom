@@ -285,10 +285,7 @@ func TestMarshalUnmarshalJSON(t *testing.T) {
 	if g.k != f.k {
 		t.Error("invalid k value")
 	}
-	if g.b == nil {
-		t.Fatal("bitset is nil")
-	}
-	if !g.b.Equal(f.b) {
+	if !g.b.Equal(&f.b) {
 		t.Error("bitsets are not equal")
 	}
 }
@@ -322,10 +319,7 @@ func TestWriteToReadFrom(t *testing.T) {
 	if g.k != f.k {
 		t.Error("invalid k value")
 	}
-	if g.b == nil {
-		t.Fatal("bitset is nil")
-	}
-	if !g.b.Equal(f.b) {
+	if !g.b.Equal(&f.b) {
 		t.Error("bitsets are not equal")
 	}
 
@@ -357,10 +351,7 @@ func TestReadWriteBinary(t *testing.T) {
 	if g.k != f.k {
 		t.Error("invalid k value")
 	}
-	if g.b == nil {
-		t.Fatal("bitset is nil")
-	}
-	if !g.b.Equal(f.b) {
+	if !g.b.Equal(&f.b) {
 		t.Error("bitsets are not equal")
 	}
 }
@@ -387,10 +378,7 @@ func TestEncodeDecodeGob(t *testing.T) {
 	if g.k != f.k {
 		t.Error("invalid k value")
 	}
-	if g.b == nil {
-		t.Fatal("bitset is nil")
-	}
-	if !g.b.Equal(f.b) {
+	if !g.b.Equal(&f.b) {
 		t.Error("bitsets are not equal")
 	}
 	if !g.Test([]byte("three")) {
@@ -454,6 +442,21 @@ func BenchmarkCombinedTestAndAdd(b *testing.B) {
 		f.TestAndAdd(key)
 	}
 }
+
+func BenchmarkTest(b *testing.B) {
+	f := NewWithEstimates(uint(b.N), 0.0001)
+	key := make([]byte, 100)
+	for i := 0; i < b.N; i++ {
+		binary.BigEndian.PutUint32(key, uint32(i))
+		f.TestAndAdd(key)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		binary.BigEndian.PutUint32(key, uint32(i))
+		f.Test(key)
+	}
+}
+
 
 func TestMerge(t *testing.T) {
 	f := New(1000, 4)
